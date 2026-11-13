@@ -1,0 +1,30 @@
+{
+  "name": "spp_lab5",
+  "version": "1.0.0",
+  "description": "GraphQL Federation Scientific Portal with 10k+ records and Monitoring",
+  "main": "gateway/index.js",
+  "scripts": {
+    "seed": "node scripts/ingest.js",
+    "catalog": "node subgraph-catalog/index.js",
+    "analytics": "node subgraph-analytics/index.js",
+    "gateway": "node gateway/index.js",
+    "server": "concurrently -k -p \"[{name}]\" -n \"CATALOG,ANALYTICS,GATEWAY\" -c \"cyan,magenta,green\" \"npm run catalog\" \"npm run analytics\" \"npm run gateway\"",
+    "frontend": "cd frontend && npm run dev",
+    "start": "concurrently -k -p \"[{name}]\" -n \"CATALOG,ANALYTICS,GATEWAY,FRONTEND\" -c \"cyan,magenta,green,yellow\" \"npm run catalog\" \"npm run analytics\" \"npm run gateway\" \"npm run frontend\""
+  },
+  "private": true,
+  "dependencies": {
+    "@apollo/gateway": "^2.14.4",
+    "@apollo/server": "^4.12.0",
+    "@apollo/subgraph": "^2.14.4",
+    "axios": "^1.13.6",
+    "better-sqlite3": "^12.6.2",
+    "concurrently": "^9.2.1",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^4.22.1",
+    "graphql": "^16.15.0",
+    "graphql-tag": "^2.12.6",
+    "prom-client": "^15.1.3"
+  }
+}
