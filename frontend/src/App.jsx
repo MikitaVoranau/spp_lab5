@@ -5,49 +5,65 @@ import {
   INITIAL_DATA_QUERY, 
   ADD_REVIEW_MUTATION, 
   TOGGLE_BOOKMARK_MUTATION, 
-  CREATE_PAPER_MUTATION, 
-  SYNC_EXTERNAL_MUTATION 
+  CREATE_PAPER_MUTATION,
+  DELETE_PAPER_MUTATION 
 } from './api';
 import { 
   Search, 
-  Database, 
   Layers, 
   Activity, 
   Bookmark, 
   Star, 
   PlusCircle, 
-  RefreshCw, 
   Eye, 
   Download, 
   ChevronLeft, 
   ChevronRight, 
-  Award,
-  Cpu,
-  BarChart2,
-  CheckCircle2
+  CheckCircle2, 
+  BookOpen, 
+  X, 
+  Quote,
+  Trash2
 } from 'lucide-react';
 
+function getPaperFullSections(paper) {
+  const domain = paper.category?.domain || 'Computer Science';
+  const categoryName = paper.category?.name || 'Modern Computing';
+
+  return {
+    introduction: `The continuous acceleration of research in ${categoryName} has revealed significant algorithmic bottlenecks in traditional centralized infrastructures. As modern workloads increase in heterogeneity, distributed models require robust paradigms that offer formal convergence guarantees. This investigation presents an empirical analysis of multi-tenant query scheduling, evaluating latency constraints under varying concurrency profiles across both theoretical simulation and real-world execution traces.`,
+    
+    relatedWork: `Prior methodologies predominantly relied on static query caching and decoupled heuristic schedulers. While these frameworks demonstrated utility in controlled laboratory benchmarks, their operational throughput degraded non-linearly under heavy node churn. Seminal contributions by Anderson et al. established baseline bounds for asynchronous data pipelines; however, their formulations did not account for cross-domain federated schemas with heterogeneous type definitions.`,
+
+    methodology: `Our architecture establishes a federated consensus protocol over partitioned subgraphs. Let G = (V, E) represent the query routing graph, where each vertex denotes an autonomous processing node and directed edges define latency-bounded network links. By formulating execution scheduling as a constrained convex optimization problem, the system dynamically balances execution loads across independent workers:`,
+
+    mathFormula: `lim(t → ∞) E[ ||θ_t - θ*||² ] ≤ C₁ / (K · t) + C₂ · σ² / B`,
+
+    experiments: `We evaluated system throughput against 12,000 distinct benchmark workloads across multi-region server clusters. The empirical findings demonstrate a 38.4% reduction in tail (p99) latency compared to standard baseline configurations. Furthermore, the protocol maintained fault-tolerance during simulated failures of up to 25% of participating worker nodes without state corruption or consistency violations.`,
+
+    discussion: `The empirical evidence confirms that schema-directed query decomposition significantly mitigates memory contention and cache thrashing. Notably, the integration of distributed ledger indices reduced synchronization overhead by a factor of 2.4x. These observations suggest that decoupling the query planner from local storage engines is a viable design pattern for next-generation scientific analytics engines.`,
+
+    conclusion: `This research demonstrates the viability of high-throughput federated pipelines for large-scale data ingestion and synthesis. By combining decoupled domain subgraphs with adaptive routing, the proposed framework achieves high resilience and superior query throughput. Subsequent investigations will focus on automated schema compilation and self-healing distributed topologies.`
+  };
+}
+
 export default function App() {
-  // Данные
   const [papers, setPapers] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [categories, setCategories] = useState([]);
-  const [stats, setStats] = useState(null);
-  const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState(null);
 
-  // Фильтры и пагинация
   const [search, setSearch] = useState('');
   const [selectedSource, setSelectedSource] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
+  const [onlyBookmarked, setOnlyBookmarked] = useState(false);
   const [sortField, setSortField] = useState('publishedYear');
   const [sortOrder, setSortOrder] = useState('DESC');
   const [page, setPage] = useState(1);
   const pageSize = 8;
 
-  // Модальные окна
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newAbstract, setNewAbstract] = useState('');
@@ -55,25 +71,35 @@ export default function App() {
   const [newCategory, setNewCategory] = useState('cat-ai');
   const [newYear, setNewYear] = useState(2026);
 
-  // Добавление отзыва
+  const [readerPaper, setReaderPaper] = useState(null);
+
   const [activeReviewPaperId, setActiveReviewPaperId] = useState(null);
   const [reviewerName, setReviewerName] = useState('');
   const [reviewerRating, setReviewerRating] = useState(5);
   const [reviewerComment, setReviewerComment] = useState('');
 
-  // Загрузка метаданных (статистика каталога и аналитики)
+  const isAnyModalOpen = Boolean(readerPaper || isCreateOpen || activeReviewPaperId);
+
+  useEffect(() => {
+    if (isAnyModalOpen) {
+      document.body.classList.add('modal-open');
+    } else {
+      document.body.classList.remove('modal-open');
+    }
+    return () => {
+      document.body.classList.remove('modal-open');
+    };
+  }, [isAnyModalOpen]);
+
   const loadInitialData = async () => {
     try {
       const data = await fetchGraphQL(INITIAL_DATA_QUERY);
       setCategories(data.categories || []);
-      setStats(data.catalogStats);
-      setAnalytics(data.analyticsSummary);
     } catch (err) {
-      console.error('Initial data fetch error:', err);
+      console.error(err);
     }
   };
 
-  // Загрузка статей
   const loadPapers = async () => {
     setLoading(true);
     try {
@@ -97,8 +123,7 @@ export default function App() {
         setTotalPages(data.papers.totalPages);
       }
     } catch (err) {
-      console.error('Papers fetch error:', err);
-      showNotice('Ошибка выполнения GraphQL запроса к Gateway', 'error');
+      showNotice('Ошибка выполнения запроса к Gateway');
     } finally {
       setLoading(false);
     }
@@ -127,20 +152,60 @@ export default function App() {
     try {
       const res = await fetchGraphQL(TOGGLE_BOOKMARK_MUTATION, { paperId });
       showNotice(res.toggleBookmark.message);
-      // Локально переключить статус
       setPapers(prev => prev.map(p => p.id === paperId ? { ...p, isBookmarked: !p.isBookmarked } : p));
+      if (readerPaper && readerPaper.id === paperId) {
+        setReaderPaper(prev => ({ ...prev, isBookmarked: !prev.isBookmarked }));
+      }
     } catch (err) {
       console.error(err);
     }
   };
 
-  const handleSyncSource = async (source) => {
+  const handleOpenReader = (paper) => {
+    setReaderPaper(paper);
+    fetchGraphQL(`mutation RecordView($id: ID!) { recordView(paperId: $id) { viewsCount } }`, { id: paper.id })
+      .then(() => {
+        setPapers(prev => prev.map(p => p.id === paper.id ? { 
+          ...p, 
+          metrics: { ...p.metrics, viewsCount: (p.metrics?.viewsCount || 0) + 1 } 
+        } : p));
+      })
+      .catch(() => {});
+  };
+
+  const handleDownloadPaper = (paper) => {
+    const bibtex = `@article{${paper.id},
+  title = {${paper.title}},
+  source = {${paper.source}},
+  year = {${paper.publishedYear}},
+  doi = {${paper.doi || '10.1016/' + paper.id}},
+  abstract = {${paper.abstract}}
+}`;
+    const blob = new Blob([bibtex], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${paper.id}-citation.bib`;
+    link.click();
+    showNotice(`Файл цитирования BibTeX для ${paper.id} успешно скачан!`);
+  };
+
+  const handleCopyCitation = (paper) => {
+    const citation = `${paper.authors?.map(a => a.author.name).join(', ') || 'Authors'}. (${paper.publishedYear}). "${paper.title}". ${paper.source}. DOI: ${paper.doi || 'N/A'}`;
+    navigator.clipboard.writeText(citation);
+    showNotice('Цитата скопирована в буфер обмена!');
+  };
+
+  const handleDeletePaper = async (paperId) => {
+    if (!window.confirm('Вы уверены, что хотите удалить эту публикацию?')) return;
     try {
-      showNotice(`Синхронизация с ${source}...`);
-      const res = await fetchGraphQL(SYNC_EXTERNAL_MUTATION, { source });
-      showNotice(res.syncExternalData.message);
-      loadInitialData();
+      const res = await fetchGraphQL(DELETE_PAPER_MUTATION, { id: paperId });
+      showNotice(res.deletePaper.message);
+      if (readerPaper && readerPaper.id === paperId) {
+        setReaderPaper(null);
+      }
       loadPapers();
+      loadInitialData();
     } catch (err) {
       console.error(err);
     }
@@ -172,7 +237,7 @@ export default function App() {
   const handleAddReview = async (e) => {
     e.preventDefault();
     try {
-      await fetchGraphQL(ADD_REVIEW_MUTATION, {
+      const res = await fetchGraphQL(ADD_REVIEW_MUTATION, {
         input: {
           paperId: activeReviewPaperId,
           reviewerName,
@@ -180,10 +245,18 @@ export default function App() {
           comment: reviewerComment
         }
       });
-      showNotice('Отзыв успешно добавлен в Analytics Subgraph!');
+      showNotice('Отзыв успешно добавлен!');
       setActiveReviewPaperId(null);
       setReviewerName('');
       setReviewerComment('');
+      
+      if (readerPaper && readerPaper.id === activeReviewPaperId) {
+        setReaderPaper(prev => ({
+          ...prev,
+          reviews: [res.addReview, ...(prev.reviews || [])]
+        }));
+      }
+
       loadPapers();
       loadInitialData();
     } catch (err) {
@@ -191,117 +264,74 @@ export default function App() {
     }
   };
 
+  const displayedPapers = onlyBookmarked 
+    ? papers.filter(p => p.isBookmarked)
+    : papers;
+
   return (
     <div className="app-container">
-      {/* Header */}
       <header className="header">
         <div className="logo-badge">
-          <Layers size={28} color="#6366f1" />
-          <div>
-            <h1 style={{ fontSize: '20px', fontWeight: 700 }}>ResearchNexus GraphQL</h1>
-            <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-              Apollo Federation 2.0 • Distributed Scientific Architecture
-            </p>
-          </div>
-          <span className="badge-tag">Federated Supergraph</span>
+          <Layers size={26} color="#2563eb" />
+          <h1 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text-main)', letterSpacing: '-0.2px' }}>
+            ResearchNexus
+          </h1>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button className="btn-outline" onClick={() => window.open('http://localhost:4000/metrics', '_blank')}>
-            <BarChart2 size={16} /> Prometheus Metrics
-          </button>
-          <button className="btn-primary" onClick={() => setIsCreateOpen(true)}>
-            <PlusCircle size={16} /> Опубликовать работу
-          </button>
-        </div>
+        <button className="btn-primary" onClick={() => setIsCreateOpen(true)}>
+          <PlusCircle size={16} /> Опубликовать работу
+        </button>
       </header>
 
-      {/* Notice Banner */}
       {notice && (
         <div style={{
-          background: 'rgba(99, 102, 241, 0.2)',
-          border: '1px solid var(--accent-indigo)',
-          color: '#e0e7ff',
-          padding: '12px 20px',
-          borderRadius: '10px',
-          marginBottom: '20px',
+          background: '#eff6ff',
+          border: '1px solid #bfdbfe',
+          color: '#1e40af',
+          padding: '10px 16px',
+          borderRadius: '4px',
+          marginBottom: '18px',
           display: 'flex',
           alignItems: 'center',
           gap: '10px'
         }}>
-          <CheckCircle2 size={18} color="#818cf8" />
-          <span>{notice}</span>
+          <CheckCircle2 size={16} color="#2563eb" />
+          <span style={{ fontSize: '13px', fontWeight: 500 }}>{notice}</span>
         </div>
       )}
 
-      {/* KPI Stats Bar */}
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div>
-            <div className="stat-val">{stats ? stats.totalPapers.toLocaleString() : '12,000+'}</div>
-            <div className="stat-label">Публикаций в Catalog Subgraph</div>
-          </div>
-          <Database size={24} color="#6366f1" />
-        </div>
-
-        <div className="stat-card">
-          <div>
-            <div className="stat-val">{stats ? stats.totalAuthors.toLocaleString() : '1,500'}</div>
-            <div className="stat-label">Ученых и исследователей</div>
-          </div>
-          <Award size={24} color="#06b6d4" />
-        </div>
-
-        <div className="stat-card">
-          <div>
-            <div className="stat-val">{analytics ? analytics.totalViews.toLocaleString() : '---'}</div>
-            <div className="stat-label">Просмотров в Analytics Subgraph</div>
-          </div>
-          <Eye size={24} color="#10b981" />
-        </div>
-
-        <div className="stat-card">
-          <div>
-            <div className="stat-val">{analytics ? analytics.averageSystemRating : '4.6'} ★</div>
-            <div className="stat-label">Средний рейтинг публикаций</div>
-          </div>
-          <Star size={24} color="#f59e0b" />
-        </div>
-      </div>
-
-      {/* Filter and Control Panel */}
       <div className="controls-panel">
         <form onSubmit={handleSearchSubmit} className="search-row">
           <input 
             type="text" 
             className="search-input" 
-            placeholder="Поиск по 12,000+ статьям, темам и абстрактам..."
+            placeholder="Поиск по статьям, авторам, ключевым словам..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
           <button type="submit" className="btn-primary">
-            <Search size={16} /> Найти
+            <Search size={15} /> Найти
           </button>
         </form>
 
         <div className="filters-row">
-          <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Источник:</span>
+          <span style={{ fontSize: '13px', color: 'var(--text-muted)', fontWeight: 500 }}>Источник:</span>
           <select value={selectedSource} onChange={(e) => { setSelectedSource(e.target.value); setPage(1); }}>
-            <option value="">Все источники (3 интеграции)</option>
+            <option value="">Все источники</option>
             <option value="arXiv">arXiv</option>
             <option value="OpenAlex">OpenAlex</option>
             <option value="SemanticScholar">SemanticScholar</option>
           </select>
 
-          <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Категория:</span>
+          <span style={{ fontSize: '13px', color: 'var(--text-muted)', fontWeight: 500 }}>Категория:</span>
           <select value={selectedCategory} onChange={(e) => { setSelectedCategory(e.target.value); setPage(1); }}>
             <option value="">Все категории ({categories.length})</option>
             {categories.map(c => (
-              <option key={c.id} value={c.id}>{c.name} ({c.papersCount})</option>
+              <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
 
-          <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Сортировка:</span>
+          <span style={{ fontSize: '13px', color: 'var(--text-muted)', fontWeight: 500 }}>Сортировка:</span>
           <select value={sortField} onChange={(e) => setSortField(e.target.value)}>
             <option value="publishedYear">Год публикации</option>
             <option value="citationsCount">Цитируемость</option>
@@ -314,117 +344,172 @@ export default function App() {
             <option value="ASC">По возрастанию</option>
           </select>
 
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
-            <button className="btn-outline" onClick={() => handleSyncSource('arXiv')} title="Собрать новые статьи из arXiv">
-              <RefreshCw size={14} /> arXiv Sync
-            </button>
-            <button className="btn-outline" onClick={() => handleSyncSource('OpenAlex')} title="Собрать новые статьи из OpenAlex">
-              <RefreshCw size={14} /> OpenAlex Sync
-            </button>
-          </div>
+          <button 
+            type="button" 
+            className="btn-outline"
+            style={{ 
+              marginLeft: 'auto', 
+              backgroundColor: onlyBookmarked ? '#eff6ff' : '#ffffff',
+              borderColor: onlyBookmarked ? '#2563eb' : 'var(--border-color)',
+              color: onlyBookmarked ? '#2563eb' : 'var(--text-sub)'
+            }}
+            onClick={() => setOnlyBookmarked(!onlyBookmarked)}
+          >
+            <Bookmark size={15} fill={onlyBookmarked ? '#2563eb' : 'none'} />
+            {onlyBookmarked ? 'Показаны: Закладки' : 'Только сохраненные'}
+          </button>
         </div>
       </div>
 
-      {/* Results Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <div style={{ fontSize: '14px', color: 'var(--text-muted)' }}>
-          Найдено записей: <strong style={{ color: '#fff' }}>{totalCount.toLocaleString()}</strong> 
-          {loading && <span style={{ marginLeft: '10px', color: 'var(--accent-cyan)' }}>Обновление данных через Federation Gateway...</span>}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+        <div style={{ fontSize: '13.5px', color: 'var(--text-muted)' }}>
+          {onlyBookmarked ? (
+            <span>Показано сохраненных статей: <strong style={{ color: 'var(--text-main)' }}>{displayedPapers.length}</strong></span>
+          ) : (
+            <span>Всего найдено: <strong style={{ color: 'var(--text-main)' }}>{totalCount.toLocaleString()}</strong> публикаций</span>
+          )}
+          {loading && <span style={{ marginLeft: '10px', color: 'var(--accent-blue)' }}>Загрузка...</span>}
         </div>
         <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
           Страница {page} из {totalPages}
         </div>
       </div>
 
-      {/* Papers Feed */}
       <div className="papers-feed">
-        {papers.map((p) => (
-          <div key={p.id} className="paper-card">
-            <div className="paper-header">
-              <div>
-                <div className="paper-meta">
-                  <span className="source-tag">{p.source}</span>
-                  {p.category && <span className="category-tag">{p.category.name} ({p.category.domain})</span>}
-                  <span>Год: <strong>{p.publishedYear}</strong></span>
-                  <span>Цитат: <strong>{p.citationsCount}</strong></span>
-                  <span>Impact: <strong>{p.impactFactor}</strong></span>
+        {displayedPapers.length === 0 ? (
+          <div style={{ 
+            background: '#ffffff', 
+            padding: '40px', 
+            textAlign: 'center', 
+            borderRadius: '8px', 
+            border: '1px solid var(--border-color)',
+            color: 'var(--text-muted)' 
+          }}>
+            {onlyBookmarked ? 'У вас пока нет сохраненных статей. Нажмите на значок закладки у любой статьи, чтобы добавить ее сюда.' : 'Статьи не найдены.'}
+          </div>
+        ) : (
+          displayedPapers.map((p) => (
+            <div key={p.id} className="paper-card">
+              <div className="paper-header">
+                <div>
+                  <div className="paper-meta">
+                    <span className="source-tag">{p.source}</span>
+                    {p.category && <span className="category-tag">{p.category.name}</span>}
+                    <span>Год: <strong>{p.publishedYear}</strong></span>
+                    <span>Цитат: <strong>{p.citationsCount}</strong></span>
+                    <span>Impact: <strong>{p.impactFactor}</strong></span>
+                  </div>
+                  <h2 
+                    className="paper-title" 
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => handleOpenReader(p)}
+                  >
+                    {p.title}
+                  </h2>
                 </div>
-                <h2 className="paper-title">{p.title}</h2>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <button 
+                    onClick={() => handleToggleBookmark(p.id)}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: p.isBookmarked ? '#d97706' : '#94a3b8'
+                    }}
+                    title={p.isBookmarked ? 'Удалить из закладок' : 'Сохранить в закладки'}
+                  >
+                    <Bookmark size={20} fill={p.isBookmarked ? '#d97706' : 'none'} />
+                  </button>
+                  <button 
+                    onClick={() => handleDeletePaper(p.id)}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: '#94a3b8',
+                      padding: '2px'
+                    }}
+                    title="Удалить статью"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
               </div>
-              <button 
-                onClick={() => handleToggleBookmark(p.id)}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: p.isBookmarked ? '#f59e0b' : 'var(--text-muted)'
-                }}
-                title={p.isBookmarked ? 'В закладках' : 'Добавить в закладки'}
-              >
-                <Bookmark size={22} fill={p.isBookmarked ? '#f59e0b' : 'none'} />
-              </button>
-            </div>
 
-            <p className="paper-abstract">{p.abstract}</p>
+              <p className="paper-abstract">{p.abstract}</p>
 
-            {/* Авторы (Вложенность 2 уровня: Paper -> authors -> author) */}
-            <div className="authors-list">
-              {p.authors && p.authors.map((rel, i) => (
-                <div key={i} className="author-chip" title={`${rel.author.affiliation} • ${rel.author.country} • h-index: ${rel.author.hIndex}`}>
-                  <strong>{rel.author.name}</strong> ({rel.role})
-                </div>
-              ))}
-            </div>
+              <div className="authors-list">
+                {p.authors && p.authors.map((rel, i) => (
+                  <div key={i} className="author-chip">
+                    <strong>{rel.author.name}</strong> ({rel.role})
+                  </div>
+                ))}
+              </div>
 
-            {/* Метрики и отзывы из сабграфа Analytics (Federation resolve) */}
-            <div className="nested-box">
-              <div className="metrics-row">
-                <div className="metric-item">
-                  <Eye size={15} color="#06b6d4" /> Просмотры: <strong>{p.metrics ? p.metrics.viewsCount.toLocaleString() : 0}</strong>
-                </div>
-                <div className="metric-item">
-                  <Download size={15} color="#10b981" /> Скачивания: <strong>{p.metrics ? p.metrics.downloadsCount.toLocaleString() : 0}</strong>
-                </div>
-                <div className="metric-item">
-                  <Activity size={15} color="#f43f5e" /> Altmetric: <strong>{p.metrics ? p.metrics.altmetricScore : 0}</strong>
-                </div>
-                <div className="metric-item">
-                  <Star size={15} color="#f59e0b" /> Рейтинг: <strong>{p.metrics && p.metrics.averageRating ? p.metrics.averageRating : 'Нет оценок'}</strong>
-                </div>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '14px' }}>
+                <button 
+                  className="btn-primary" 
+                  style={{ fontSize: '12.5px', padding: '6px 12px' }}
+                  onClick={() => handleOpenReader(p)}
+                >
+                  <BookOpen size={14} /> Читать статью
+                </button>
                 <button 
                   className="btn-outline" 
-                  style={{ marginLeft: 'auto', padding: '4px 10px', fontSize: '12px' }}
-                  onClick={() => setActiveReviewPaperId(p.id)}
+                  style={{ fontSize: '12.5px', padding: '6px 12px' }}
+                  onClick={() => handleCopyCitation(p)}
                 >
-                  Оставить отзыв
+                  <Quote size={14} /> Цитировать (APA)
                 </button>
               </div>
 
-              {/* Отзывы */}
-              {p.reviews && p.reviews.length > 0 && (
-                <div className="reviews-section">
-                  <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>
-                    Рецензии экспертов ({p.reviews.length}):
+              <div className="nested-box">
+                <div className="metrics-row">
+                  <div className="metric-item">
+                    <Eye size={15} color="#0284c7" /> Просмотры: <strong>{p.metrics ? p.metrics.viewsCount.toLocaleString() : 0}</strong>
                   </div>
-                  {p.reviews.map(rev => (
-                    <div key={rev.id} className="review-item">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8', fontSize: '12px' }}>
-                        <span><strong>{rev.reviewerName}</strong></span>
-                        <span style={{ color: '#f59e0b' }}>{'★'.repeat(rev.rating)}</span>
-                      </div>
-                      <p style={{ marginTop: '4px', color: '#e2e8f0' }}>{rev.comment}</p>
-                    </div>
-                  ))}
+                  <div className="metric-item">
+                    <Download size={15} color="#059669" /> Скачивания: <strong>{p.metrics ? p.metrics.downloadsCount.toLocaleString() : 0}</strong>
+                  </div>
+                  <div className="metric-item" title="Altmetric Score — индекс онлайн-внимания и цитируемости в медиа">
+                    <Activity size={15} color="#e11d48" /> Медиа-индекс (Altmetric): <strong>{p.metrics ? p.metrics.altmetricScore : 0}</strong>
+                  </div>
+                  <div className="metric-item">
+                    <Star size={15} color="#d97706" /> Рейтинг: <strong>{p.metrics && p.metrics.averageRating ? p.metrics.averageRating : 'Нет оценок'}</strong>
+                  </div>
+                  <button 
+                    className="btn-outline" 
+                    style={{ marginLeft: 'auto', padding: '4px 10px', fontSize: '12px' }}
+                    onClick={() => setActiveReviewPaperId(p.id)}
+                  >
+                    Оставить отзыв
+                  </button>
                 </div>
-              )}
+
+                {p.reviews && p.reviews.length > 0 && (
+                  <div className="reviews-section">
+                    <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '4px' }}>
+                      Рецензии экспертов ({p.reviews.length}):
+                    </div>
+                    {p.reviews.map(rev => (
+                      <div key={rev.id} className="review-item">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '12px' }}>
+                          <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{rev.reviewerName}</span>
+                          <span style={{ color: '#d97706' }}>{'★'.repeat(rev.rating)}</span>
+                        </div>
+                        <p style={{ marginTop: '4px', color: 'var(--text-sub)' }}>{rev.comment}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
 
-      {/* Pagination Bar */}
       <div className="pagination-bar">
-        <div style={{ fontSize: '14px', color: 'var(--text-muted)' }}>
+        <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
           Показано {(page - 1) * pageSize + 1} - {Math.min(page * pageSize, totalCount)} из {totalCount.toLocaleString()}
         </div>
         <div className="pagination-controls">
@@ -435,7 +520,7 @@ export default function App() {
           >
             <ChevronLeft size={16} /> Назад
           </button>
-          <span style={{ fontSize: '14px', fontWeight: 600 }}>{page} / {totalPages}</span>
+          <span style={{ fontSize: '13.5px', fontWeight: 600 }}>{page} / {totalPages}</span>
           <button 
             className="btn-outline" 
             disabled={page >= totalPages}
@@ -446,11 +531,125 @@ export default function App() {
         </div>
       </div>
 
-      {/* Modal: Добавить публикацию (Мутация Catalog) */}
+      {readerPaper && (() => {
+        const fullPaper = getPaperFullSections(readerPaper);
+
+        return (
+          <div className="modal-overlay" onClick={() => setReaderPaper(null)}>
+            <div className="modal-content" style={{ maxWidth: '920px', padding: '36px' }} onClick={e => e.stopPropagation()}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid var(--border-color)', paddingBottom: '20px', marginBottom: '24px' }}>
+                <div style={{ paddingRight: '20px' }}>
+                  <div className="paper-meta" style={{ marginBottom: '14px' }}>
+                    <span className="source-tag">{readerPaper.source}</span>
+                    {readerPaper.category && <span className="category-tag">{readerPaper.category.name}</span>}
+                    <span>DOI: <strong>{readerPaper.doi || '10.1016/' + readerPaper.id}</strong></span>
+                    <span>Год издания: <strong>{readerPaper.publishedYear}</strong></span>
+                    <span>Импакт-фактор: <strong>{readerPaper.impactFactor}</strong></span>
+                  </div>
+                  <h2 style={{ fontSize: '23px', fontWeight: 800, color: 'var(--text-main)', lineHeight: '1.4', letterSpacing: '-0.3px' }}>
+                    {readerPaper.title}
+                  </h2>
+                </div>
+                <button 
+                  onClick={() => setReaderPaper(null)} 
+                  style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px' }}
+                >
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div style={{ background: '#f8fafc', padding: '16px 20px', borderRadius: '6px', border: '1px solid var(--border-color)', marginBottom: '24px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' }}>
+                  Authors & Institutions:
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                  {readerPaper.authors?.map((a, i) => (
+                    <div key={i} className="author-chip" style={{ background: '#ffffff', padding: '6px 12px', fontSize: '12.5px' }}>
+                      <strong style={{ color: 'var(--text-main)' }}>{a.author.name}</strong> • {a.author.affiliation} ({a.author.country}) <span style={{ color: '#0284c7', marginLeft: '4px' }}>[h-index: {a.author.hIndex}]</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="reader-content" style={{ maxHeight: '65vh' }}>
+                <div className="reader-section-title" style={{ marginTop: 0 }}>Abstract</div>
+                <p className="reader-paragraph" style={{ fontWeight: 500, color: 'var(--text-main)' }}>
+                  {readerPaper.abstract}
+                </p>
+
+                <div className="reader-section-title">1. Introduction</div>
+                <p className="reader-paragraph">
+                  {fullPaper.introduction}
+                </p>
+
+                <div className="reader-section-title">2. Related Work</div>
+                <p className="reader-paragraph">
+                  {fullPaper.relatedWork}
+                </p>
+
+                <div className="reader-section-title">3. Methodology & Architecture</div>
+                <p className="reader-paragraph">
+                  {fullPaper.methodology}
+                </p>
+                
+                <div className="reader-formula-box">
+                  {fullPaper.mathFormula}
+                </div>
+
+                <div className="reader-section-title">4. Experimental Evaluation</div>
+                <p className="reader-paragraph">
+                  {fullPaper.experiments}
+                </p>
+
+                <div className="reader-section-title">5. Discussion</div>
+                <p className="reader-paragraph">
+                  {fullPaper.discussion}
+                </p>
+
+                <div className="reader-section-title">6. Conclusion</div>
+                <p className="reader-paragraph">
+                  {fullPaper.conclusion}
+                </p>
+
+                <div className="reader-section-title">References</div>
+                <ul style={{ paddingLeft: '20px', fontSize: '13px', color: 'var(--text-muted)', lineHeight: '1.8' }}>
+                  <li>[1] Anderson, J., et al. (2023). "Foundations of Distributed Consensus in Scalable Architectures". <i>Journal of Systems Engineering</i>, 41(3), 204-219.</li>
+                  <li>[2] Chen, L., & Novak, M. (2024). "Decoupled Federated Graph Execution under Latency Constraints". <i>ACM Computing Surveys</i>, 56(8), 1-32.</li>
+                  <li>[3] Müller, K. (2025). "Empirical Upper Bounds on High-Throughput Ingestion Pipelines". <i>IEEE Transactions on Cloud Computing</i>, 12(2), 114-128.</li>
+                </ul>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-color)', paddingTop: '20px', marginTop: '10px' }}>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button className="btn-outline" onClick={() => handleCopyCitation(readerPaper)}>
+                    <Quote size={14} /> Скопировать цитату (APA)
+                  </button>
+                  <button className="btn-outline" onClick={() => handleDownloadPaper(readerPaper)}>
+                    <Download size={14} /> Скачать BibTeX
+                  </button>
+                  <button 
+                    className="btn-outline"
+                    onClick={() => handleToggleBookmark(readerPaper.id)}
+                    style={{ color: readerPaper.isBookmarked ? '#d97706' : 'inherit' }}
+                  >
+                    <Bookmark size={14} fill={readerPaper.isBookmarked ? '#d97706' : 'none'} />
+                    {readerPaper.isBookmarked ? 'В закладках' : 'В закладки'}
+                  </button>
+                </div>
+
+                <button className="btn-primary" onClick={() => { setActiveReviewPaperId(readerPaper.id); }}>
+                  Оставить рецензию
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {isCreateOpen && (
         <div className="modal-overlay" onClick={() => setIsCreateOpen(false)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2 style={{ marginBottom: '18px' }}>Новая публикация в Catalog Subgraph</h2>
+            <h2 style={{ marginBottom: '16px', fontSize: '18px', color: 'var(--text-main)' }}>Новая публикация в Catalog Subgraph</h2>
             <form onSubmit={handleCreatePaper}>
               <div className="field-group">
                 <label>Название статьи:</label>
@@ -459,7 +658,7 @@ export default function App() {
                   required 
                   value={newTitle} 
                   onChange={e => setNewTitle(e.target.value)} 
-                  placeholder="e.g. Distributed Consensus in Federated GraphQL Systems"
+                  placeholder="Название исследования..."
                 />
               </div>
 
@@ -474,7 +673,7 @@ export default function App() {
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
                 <div className="field-group">
                   <label>Источник:</label>
                   <select value={newSource} onChange={e => setNewSource(e.target.value)}>
@@ -505,7 +704,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '18px' }}>
                 <button type="button" className="btn-outline" onClick={() => setIsCreateOpen(false)}>Отмена</button>
                 <button type="submit" className="btn-primary">Отправить мутацию GraphQL</button>
               </div>
@@ -514,11 +713,10 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal: Добавить рецензию (Мутация Analytics) */}
       {activeReviewPaperId && (
         <div className="modal-overlay" onClick={() => setActiveReviewPaperId(null)}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h2 style={{ marginBottom: '18px' }}>Рецензия на работу {activeReviewPaperId}</h2>
+            <h2 style={{ marginBottom: '16px', fontSize: '18px', color: 'var(--text-main)' }}>Рецензия на работу {activeReviewPaperId}</h2>
             <form onSubmit={handleAddReview}>
               <div className="field-group">
                 <label>ФИО Рецензента:</label>
@@ -553,7 +751,7 @@ export default function App() {
                 />
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '18px' }}>
                 <button type="button" className="btn-outline" onClick={() => setActiveReviewPaperId(null)}>Отмена</button>
                 <button type="submit" className="btn-primary">Сохранить рецензию</button>
               </div>

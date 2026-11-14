@@ -234,5 +234,5 @@ const PORT = 4002;
 startStandaloneServer(server, {
   listen: { port: PORT }
 }).then(({ url }) => {
-  console.log(`[Analytics Subgraph] 🚀 Ready at ${url}`);
+  console.log(`[Analytics Subgraph] Ready at ${url}`);
 });

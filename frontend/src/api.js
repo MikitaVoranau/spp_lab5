@@ -20,7 +20,6 @@ export async function fetchGraphQL(query, variables = {}) {
   return json.data;
 }
 
-// Запрос списка статей с пагинацией, фильтрацией и вложенными полями сабграфов
 export const PAPERS_QUERY = `
   query GetPapers(
     $filter: PaperFilterInput,
@@ -77,7 +76,6 @@ export const PAPERS_QUERY = `
   }
 `;
 
-// Запрос категорий и статистики каталога
 export const INITIAL_DATA_QUERY = `
   query GetInitialData {
     categories {
@@ -110,7 +108,6 @@ export const INITIAL_DATA_QUERY = `
   }
 `;
 
-// Мутация добавления рецензии (в analytics сабграф)
 export const ADD_REVIEW_MUTATION = `
   mutation AddReview($input: AddReviewInput!) {
     addReview(input: $input) {
@@ -123,7 +120,6 @@ export const ADD_REVIEW_MUTATION = `
   }
 `;
 
-// Мутация добавления/снятия закладки
 export const TOGGLE_BOOKMARK_MUTATION = `
   mutation ToggleBookmark($paperId: ID!, $tag: String) {
     toggleBookmark(paperId: $paperId, tag: $tag) {
@@ -133,7 +129,6 @@ export const TOGGLE_BOOKMARK_MUTATION = `
   }
 `;
 
-// Мутация создания статьи (в catalog сабграф)
 export const CREATE_PAPER_MUTATION = `
   mutation CreatePaper($input: CreatePaperInput!) {
     createPaper(input: $input) {
@@ -148,7 +143,15 @@ export const CREATE_PAPER_MUTATION = `
   }
 `;
 
-// Мутация симуляции синхронизации данных из внешнего источника
+export const DELETE_PAPER_MUTATION = `
+  mutation DeletePaper($id: ID!) {
+    deletePaper(id: $id) {
+      success
+      message
+    }
+  }
+`;
+
 export const SYNC_EXTERNAL_MUTATION = `
   mutation SyncExternal($source: String!) {
     syncExternalData(source: $source) {

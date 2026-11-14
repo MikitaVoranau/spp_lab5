@@ -9,11 +9,9 @@ if (!fs.existsSync(dataDir)) {
 
 const db = new Database(path.join(dataDir, 'research.db'));
 
-// Включаем WAL для максимальной производительности при параллельном чтении
 db.pragma('journal_mode = WAL');
 db.pragma('synchronous = NORMAL');
 
-// Создание таблиц
 db.exec(`
   CREATE TABLE IF NOT EXISTS categories (
     id TEXT PRIMARY KEY,

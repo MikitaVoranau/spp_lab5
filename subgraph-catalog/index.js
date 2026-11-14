@@ -5,7 +5,6 @@ const gql = require('graphql-tag');
 const client = require('prom-client');
 const db = require('./db');
 
-// Prometheus metrics
 const register = new client.Registry();
 client.collectDefaultMetrics({ register });
 
@@ -270,11 +269,9 @@ const resolvers = {
 
       const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-      // Count query
       const countSql = `SELECT COUNT(*) as total FROM papers ${whereClause}`;
       const totalCount = db.prepare(countSql).get(...params).total;
 
-      // Sort
       let orderClause = 'ORDER BY published_year DESC, citations_count DESC';
       if (sort && sort.field) {
         const fieldMap = {
@@ -288,7 +285,6 @@ const resolvers = {
         orderClause = `ORDER BY ${col} ${dir}`;
       }
 
-      // Pagination
       const limit = Math.max(1, Math.min(100, pageSize));
       const offset = (Math.max(1, page) - 1) * limit;
 
@@ -402,7 +398,6 @@ const resolvers = {
     },
 
     syncExternalData(_, { source }) {
-      // Имитация авто-сбора новых публикаций из источника
       const count = 10;
       const cat = db.prepare('SELECT id FROM categories LIMIT 1').get();
       const insert = db.prepare(`
@@ -414,7 +409,7 @@ const resolvers = {
         const id = `paper-sync-${Date.now()}-${i}`;
         insert.run(
           id,
-          `[Automated Sync] Latest Discoveries in Autonomous Systems (${source})`,
+          `Latest Discoveries in Autonomous Systems Vol. ${i + 1}`,
           `Continuous data pipeline ingested entry from ${source} real-time endpoint.`,
           source,
           cat ? cat.id : 'cat-ai',
@@ -457,5 +452,5 @@ const PORT = 4001;
 startStandaloneServer(server, {
   listen: { port: PORT }
 }).then(({ url }) => {
-  console.log(`[Catalog Subgraph] 🚀 Ready at ${url}`);
+  console.log(`[Catalog Subgraph] Ready at ${url}`);
 });

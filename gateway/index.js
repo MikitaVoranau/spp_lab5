@@ -2,31 +2,12 @@ const express = require('express');
 const cors = require('cors');
 const { ApolloServer, HeaderMap } = require('@apollo/server');
 const { ApolloGateway, IntrospectAndCompose } = require('@apollo/gateway');
-const client = require('prom-client');
+const { tracer, graphQLQueryCounter, graphQLQueryDuration } = require('./telemetry');
 
 async function startGateway() {
   const app = express();
   const PORT = 4000;
 
-  // Prometheus Metrics Registry
-  const register = new client.Registry();
-  client.collectDefaultMetrics({ register });
-
-  const gatewayRequestsTotal = new client.Counter({
-    name: 'gateway_requests_total',
-    help: 'Total number of requests handled by Apollo Federation Gateway',
-    labelNames: ['operationName', 'status'],
-    registers: [register]
-  });
-
-  const gatewayRequestDuration = new client.Histogram({
-    name: 'gateway_request_duration_seconds',
-    help: 'Duration of GraphQL queries through Federation Gateway in seconds',
-    labelNames: ['operationName'],
-    registers: [register]
-  });
-
-  // Отказоустойчивый шлюз с IntrospectAndCompose
   const gateway = new ApolloGateway({
     supergraphSdl: new IntrospectAndCompose({
       subgraphs: [
@@ -41,16 +22,25 @@ async function startGateway() {
     gateway,
     plugins: [{
       async requestDidStart(requestContext) {
-        const start = process.hrtime();
         const opName = requestContext.request.operationName || 'Anonymous';
+        const span = tracer.startSpan(`GraphQL Operation: ${opName}`);
+        span.setAttribute('graphql.operation.name', opName);
+
+        const startTime = Date.now();
+
         return {
           async willSendResponse(ctx) {
-            const delta = process.hrtime(start);
-            const durationSec = delta[0] + delta[1] / 1e9;
-            gatewayRequestDuration.labels(opName).observe(durationSec);
+            const duration = Date.now() - startTime;
+            graphQLQueryDuration.record(duration, { operation: opName });
 
             const hasErrors = ctx.response.body.kind === 'single' && ctx.response.body.singleResult.errors;
-            gatewayRequestsTotal.labels(opName, hasErrors ? 'error' : 'success').inc();
+            graphQLQueryCounter.add(1, { 
+              operation: opName, 
+              status: hasErrors ? 'error' : 'success' 
+            });
+
+            span.setAttribute('graphql.status', hasErrors ? 'error' : 'success');
+            span.end();
           }
         };
       }
@@ -62,22 +52,15 @@ async function startGateway() {
   app.use(cors());
   app.use(express.json());
 
-  // Эндпоинт мониторинга Prometheus
-  app.get('/metrics', async (req, res) => {
-    res.set('Content-Type', register.contentType);
-    res.end(await register.metrics());
-  });
-
-  // Healthcheck для отказоустойчивости
   app.get('/health', (req, res) => {
     res.json({
       status: 'UP',
       gateway: 'Apollo Federation 2.0',
+      telemetry: 'OpenTelemetry + Prometheus Exporter (Port 9464)',
       timestamp: new Date().toISOString()
     });
   });
 
-  // Интеграция Apollo Server 5.x с Express без устаревшего express4 субпакета
   app.use('/graphql', async (req, res) => {
     const headers = new HeaderMap();
     for (const [key, val] of Object.entries(req.headers)) {
@@ -112,9 +95,8 @@ async function startGateway() {
   });
 
   app.listen(PORT, () => {
-    console.log(`[Apollo Gateway] 🚀 Gateway ready at http://localhost:${PORT}/graphql`);
-    console.log(`[Monitoring] 📊 Prometheus metrics available at http://localhost:${PORT}/metrics`);
-    console.log(`[Healthcheck] ❤️ Health endpoint at http://localhost:${PORT}/health`);
+    console.log(`[Apollo Gateway] Ready at http://localhost:${PORT}/graphql`);
+    console.log(`[OpenTelemetry Prometheus] Exporter live at http://localhost:9464/metrics`);
   });
 }
 
