@@ -28,27 +28,6 @@ import {
   RefreshCw
 } from 'lucide-react';
 
-function getPaperFullSections(paper) {
-  const domain = paper.category?.domain || 'Computer Science';
-  const categoryName = paper.category?.name || 'Modern Computing';
-
-  return {
-    introduction: `The continuous acceleration of research in ${categoryName} has revealed significant algorithmic bottlenecks in traditional centralized infrastructures. As modern workloads increase in heterogeneity, distributed models require robust paradigms that offer formal convergence guarantees. This investigation presents an empirical analysis of multi-tenant query scheduling, evaluating latency constraints under varying concurrency profiles across both theoretical simulation and real-world execution traces.`,
-    
-    relatedWork: `Prior methodologies predominantly relied on static query caching and decoupled heuristic schedulers. While these frameworks demonstrated utility in controlled laboratory benchmarks, their operational throughput degraded non-linearly under heavy node churn. Seminal contributions by Anderson et al. established baseline bounds for asynchronous data pipelines; however, their formulations did not account for cross-domain federated schemas with heterogeneous type definitions.`,
-
-    methodology: `Our architecture establishes a federated consensus protocol over partitioned subgraphs. Let G = (V, E) represent the query routing graph, where each vertex denotes an autonomous processing node and directed edges define latency-bounded network links. By formulating execution scheduling as a constrained convex optimization problem, the system dynamically balances execution loads across independent workers:`,
-
-    mathFormula: `lim(t → ∞) E[ ||θ_t - θ*||² ] ≤ C₁ / (K · t) + C₂ · σ² / B`,
-
-    experiments: `We evaluated system throughput against 12,000 distinct benchmark workloads across multi-region server clusters. The empirical findings demonstrate a 38.4% reduction in tail (p99) latency compared to standard baseline configurations. Furthermore, the protocol maintained fault-tolerance during simulated failures of up to 25% of participating worker nodes without state corruption or consistency violations.`,
-
-    discussion: `The empirical evidence confirms that schema-directed query decomposition significantly mitigates memory contention and cache thrashing. Notably, the integration of distributed ledger indices reduced synchronization overhead by a factor of 2.4x. These observations suggest that decoupling the query planner from local storage engines is a viable design pattern for next-generation scientific analytics engines.`,
-
-    conclusion: `This research demonstrates the viability of high-throughput federated pipelines for large-scale data ingestion and synthesis. By combining decoupled domain subgraphs with adaptive routing, the proposed framework achieves high resilience and superior query throughput. Subsequent investigations will focus on automated schema compilation and self-healing distributed topologies.`
-  };
-}
-
 export default function App() {
   const [papers, setPapers] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -557,10 +536,7 @@ export default function App() {
         </div>
       </div>
 
-      {readerPaper && (() => {
-        const fullPaper = getPaperFullSections(readerPaper);
-
-        return (
+      {readerPaper && (
           <div className="modal-overlay" onClick={() => setReaderPaper(null)}>
             <div className="modal-content" style={{ maxWidth: '920px', padding: '36px' }} onClick={e => e.stopPropagation()}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid var(--border-color)', paddingBottom: '20px', marginBottom: '24px' }}>
@@ -568,8 +544,9 @@ export default function App() {
                   <div className="paper-meta" style={{ marginBottom: '14px' }}>
                     <span className="source-tag">{readerPaper.source}</span>
                     {readerPaper.category && <span className="category-tag">{readerPaper.category.name}</span>}
-                    <span>DOI: <strong>{readerPaper.doi || '10.1016/' + readerPaper.id}</strong></span>
+                    {readerPaper.doi && <span>DOI: <strong>{readerPaper.doi}</strong></span>}
                     <span>Год издания: <strong>{readerPaper.publishedYear}</strong></span>
+                    <span>Цитат: <strong>{readerPaper.citationsCount}</strong></span>
                     <span>Импакт-фактор: <strong>{readerPaper.impactFactor}</strong></span>
                   </div>
                   <h2 style={{ fontSize: '23px', fontWeight: 800, color: 'var(--text-main)', lineHeight: '1.4', letterSpacing: '-0.3px' }}>
@@ -584,68 +561,60 @@ export default function App() {
                 </button>
               </div>
 
-              <div style={{ background: '#f8fafc', padding: '16px 20px', borderRadius: '6px', border: '1px solid var(--border-color)', marginBottom: '24px' }}>
-                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' }}>
-                  Authors & Institutions:
+              {readerPaper.authors?.length > 0 && (
+                <div style={{ background: '#f8fafc', padding: '16px 20px', borderRadius: '6px', border: '1px solid var(--border-color)', marginBottom: '24px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px' }}>
+                    Authors & Institutions:
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                    {readerPaper.authors.map((a, i) => (
+                      <div key={i} className="author-chip" style={{ background: '#ffffff', padding: '6px 12px', fontSize: '12.5px' }}>
+                        <strong style={{ color: 'var(--text-main)' }}>{a.author.name}</strong>
+                        {a.author.affiliation && <> • {a.author.affiliation}</>}
+                        {a.author.country && <> ({a.author.country})</>}
+                        {a.author.hIndex > 0 && <span style={{ color: '#0284c7', marginLeft: '4px' }}>[h-index: {a.author.hIndex}]</span>}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                  {readerPaper.authors?.map((a, i) => (
-                    <div key={i} className="author-chip" style={{ background: '#ffffff', padding: '6px 12px', fontSize: '12.5px' }}>
-                      <strong style={{ color: 'var(--text-main)' }}>{a.author.name}</strong>
-                      {a.author.affiliation && <> • {a.author.affiliation}</>}
-                      {a.author.country && <> ({a.author.country})</>}
-                      {a.author.hIndex > 0 && <span style={{ color: '#0284c7', marginLeft: '4px' }}>[h-index: {a.author.hIndex}]</span>}
-                    </div>
-                  ))}
-                </div>
-              </div>
+              )}
 
-              <div className="reader-content" style={{ maxHeight: '65vh' }}>
+              <div className="reader-content" style={{ maxHeight: '60vh' }}>
                 <div className="reader-section-title" style={{ marginTop: 0 }}>Abstract</div>
                 <p className="reader-paragraph" style={{ fontWeight: 500, color: 'var(--text-main)' }}>
-                  {readerPaper.abstract}
+                  {readerPaper.abstract || 'Аннотация отсутствует.'}
                 </p>
 
-                <div className="reader-section-title">1. Introduction</div>
-                <p className="reader-paragraph">
-                  {fullPaper.introduction}
-                </p>
-
-                <div className="reader-section-title">2. Related Work</div>
-                <p className="reader-paragraph">
-                  {fullPaper.relatedWork}
-                </p>
-
-                <div className="reader-section-title">3. Methodology & Architecture</div>
-                <p className="reader-paragraph">
-                  {fullPaper.methodology}
-                </p>
-                
-                <div className="reader-formula-box">
-                  {fullPaper.mathFormula}
-                </div>
-
-                <div className="reader-section-title">4. Experimental Evaluation</div>
-                <p className="reader-paragraph">
-                  {fullPaper.experiments}
-                </p>
-
-                <div className="reader-section-title">5. Discussion</div>
-                <p className="reader-paragraph">
-                  {fullPaper.discussion}
-                </p>
-
-                <div className="reader-section-title">6. Conclusion</div>
-                <p className="reader-paragraph">
-                  {fullPaper.conclusion}
-                </p>
-
-                <div className="reader-section-title">References</div>
-                <ul style={{ paddingLeft: '20px', fontSize: '13px', color: 'var(--text-muted)', lineHeight: '1.8' }}>
-                  <li>[1] Anderson, J., et al. (2023). "Foundations of Distributed Consensus in Scalable Architectures". <i>Journal of Systems Engineering</i>, 41(3), 204-219.</li>
-                  <li>[2] Chen, L., & Novak, M. (2024). "Decoupled Federated Graph Execution under Latency Constraints". <i>ACM Computing Surveys</i>, 56(8), 1-32.</li>
-                  <li>[3] Müller, K. (2025). "Empirical Upper Bounds on High-Throughput Ingestion Pipelines". <i>IEEE Transactions on Cloud Computing</i>, 12(2), 114-128.</li>
+                <div className="reader-section-title">Publication Metadata</div>
+                <ul style={{ paddingLeft: '20px', fontSize: '13.5px', color: 'var(--text-sub)', lineHeight: '1.9', marginBottom: '12px' }}>
+                  <li><strong>Источник данных:</strong> {readerPaper.source}</li>
+                  {readerPaper.category && <li><strong>Направление:</strong> {readerPaper.category.name} ({readerPaper.category.domain})</li>}
+                  <li><strong>Идентификатор записи:</strong> {readerPaper.id}</li>
+                  {readerPaper.doi && <li><strong>DOI:</strong> {readerPaper.doi}</li>}
+                  {readerPaper.url && (
+                    <li>
+                      <strong>Оригинал публикации:</strong>{' '}
+                      <a href={readerPaper.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-blue)' }}>
+                        {readerPaper.url}
+                      </a>
+                    </li>
+                  )}
                 </ul>
+
+                {readerPaper.reviews && readerPaper.reviews.length > 0 && (
+                  <>
+                    <div className="reader-section-title">Рецензии ({readerPaper.reviews.length})</div>
+                    {readerPaper.reviews.map(rev => (
+                      <div key={rev.id} className="review-item">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '12px' }}>
+                          <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{rev.reviewerName}</span>
+                          <span style={{ color: '#d97706' }}>{'★'.repeat(rev.rating)}</span>
+                        </div>
+                        <p style={{ marginTop: '4px', color: 'var(--text-sub)' }}>{rev.comment}</p>
+                      </div>
+                    ))}
+                  </>
+                )}
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-color)', paddingTop: '20px', marginTop: '10px' }}>
@@ -683,8 +652,7 @@ export default function App() {
               </div>
             </div>
           </div>
-        );
-      })()}
+      )}
 
       {isCreateOpen && (
         <div className="modal-overlay" onClick={() => setIsCreateOpen(false)}>

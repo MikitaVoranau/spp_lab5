@@ -2,23 +2,12 @@ const { ApolloServer } = require('@apollo/server');
 const { startStandaloneServer } = require('@apollo/server/standalone');
 const { buildSubgraphSchema } = require('@apollo/subgraph');
 const gql = require('graphql-tag');
-const client = require('prom-client');
 const { pool, initCatalogSchema, mapPaper } = require('./db');
 const {
   ensureCategoriesAndMetricsTable,
   syncSourceLive,
   runFullBootstrapIngestion
 } = require('./ingestService');
-
-const register = new client.Registry();
-client.collectDefaultMetrics({ register });
-
-const httpRequestDuration = new client.Histogram({
-  name: 'subgraph_catalog_request_duration_seconds',
-  help: 'Duration of HTTP requests in seconds in Catalog Subgraph',
-  labelNames: ['operationName', 'status'],
-  registers: [register]
-});
 
 const typeDefs = gql`
   extend schema
@@ -368,19 +357,7 @@ async function main() {
   }
 
   const server = new ApolloServer({
-    schema: buildSubgraphSchema([{ typeDefs, resolvers }]),
-    plugins: [{
-      async requestDidStart(requestContext) {
-        const start = process.hrtime();
-        const opName = requestContext.request.operationName || 'AnonymousOp';
-        return {
-          async willSendResponse() {
-            const delta = process.hrtime(start);
-            httpRequestDuration.labels(opName, '200').observe(delta[0] + delta[1] / 1e9);
-          }
-        };
-      }
-    }]
+    schema: buildSubgraphSchema([{ typeDefs, resolvers }])
   });
 
   const { url } = await startStandaloneServer(server, { listen: { port: 4001 } });

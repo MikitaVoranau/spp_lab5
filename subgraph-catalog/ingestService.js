@@ -545,7 +545,6 @@ async function runFullBootstrapIngestion({ force = false, minPapers = 10000 } = 
 }
 
 module.exports = {
-  CATEGORIES,
   ensureCategoriesAndMetricsTable,
   syncSourceLive,
   runFullBootstrapIngestion,
