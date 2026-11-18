@@ -24,6 +24,7 @@ tracerProvider.register();
 const tracer = opentelemetry.trace.getTracer('graphql-gateway-tracer');
 
 const prometheusExporter = new PrometheusExporter({
+  host: '0.0.0.0',
   port: 9464,
   endpoint: '/metrics'
 });

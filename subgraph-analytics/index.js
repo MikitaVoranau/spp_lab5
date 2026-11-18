@@ -3,7 +3,7 @@ const { startStandaloneServer } = require('@apollo/server/standalone');
 const { buildSubgraphSchema } = require('@apollo/subgraph');
 const gql = require('graphql-tag');
 const client = require('prom-client');
-const db = require('./db');
+const { pool, initAnalyticsSchema } = require('./db');
 
 const register = new client.Registry();
 client.collectDefaultMetrics({ register });
@@ -93,146 +93,155 @@ const typeDefs = gql`
   }
 `;
 
+function mapReview(r) {
+  return {
+    id: r.id,
+    paperId: r.paper_id,
+    reviewerName: r.reviewer_name,
+    rating: r.rating,
+    comment: r.comment,
+    createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at
+  };
+}
+
+function mapMetrics(paperId, r, avgRating) {
+  return {
+    paperId,
+    viewsCount: r.views_count,
+    downloadsCount: r.downloads_count,
+    altmetricScore: r.altmetric_score,
+    trendingRank: r.trending_rank,
+    averageRating: avgRating != null ? parseFloat(parseFloat(avgRating).toFixed(2)) : null
+  };
+}
+
 const resolvers = {
   Paper: {
-    reviews(parent) {
-      return db.prepare('SELECT id, paper_id as paperId, reviewer_name as reviewerName, rating, comment, created_at as createdAt FROM reviews WHERE paper_id = ? ORDER BY created_at DESC').all(parent.id);
+    async __resolveReference(ref) {
+      return { id: ref.id };
     },
-    metrics(parent) {
-      let row = db.prepare('SELECT views_count as viewsCount, downloads_count as downloadsCount, altmetric_score as altmetricScore, trending_rank as trendingRank FROM metrics WHERE paper_id = ?').get(parent.id);
-      if (!row) {
-        row = { viewsCount: 1, downloadsCount: 0, altmetricScore: 0.0, trendingRank: 999999 };
-      }
-      const ratingRes = db.prepare('SELECT AVG(rating) as avgRating FROM reviews WHERE paper_id = ?').get(parent.id);
-      return {
-        paperId: parent.id,
-        ...row,
-        averageRating: ratingRes.avgRating ? parseFloat(ratingRes.avgRating.toFixed(2)) : null
-      };
+    async reviews(parent) {
+      const { rows } = await pool.query(
+        'SELECT * FROM reviews WHERE paper_id = $1 ORDER BY created_at DESC', [parent.id]
+      );
+      return rows.map(mapReview);
     },
-    isBookmarked(parent) {
-      const b = db.prepare('SELECT id FROM bookmarks WHERE paper_id = ?').get(parent.id);
-      return !!b;
+    async metrics(parent) {
+      const { rows } = await pool.query('SELECT * FROM metrics WHERE paper_id = $1', [parent.id]);
+      const ratingRes = await pool.query(
+        'SELECT AVG(rating) as avg FROM reviews WHERE paper_id = $1', [parent.id]
+      );
+      const row = rows[0] || { views_count: 1, downloads_count: 0, altmetric_score: 0.0, trending_rank: 999999 };
+      return mapMetrics(parent.id, row, ratingRes.rows[0]?.avg);
+    },
+    async isBookmarked(parent) {
+      const { rows } = await pool.query('SELECT id FROM bookmarks WHERE paper_id = $1', [parent.id]);
+      return rows.length > 0;
     }
   },
 
   Query: {
-    paperReviews(_, { paperId }) {
-      return db.prepare('SELECT id, paper_id as paperId, reviewer_name as reviewerName, rating, comment, created_at as createdAt FROM reviews WHERE paper_id = ?').all(paperId);
+    async paperReviews(_, { paperId }) {
+      const { rows } = await pool.query('SELECT * FROM reviews WHERE paper_id = $1', [paperId]);
+      return rows.map(mapReview);
     },
-
-    paperMetrics(_, { paperId }) {
-      const row = db.prepare('SELECT views_count as viewsCount, downloads_count as downloadsCount, altmetric_score as altmetricScore, trending_rank as trendingRank FROM metrics WHERE paper_id = ?').get(paperId);
-      if (!row) return null;
-      const ratingRes = db.prepare('SELECT AVG(rating) as avgRating FROM reviews WHERE paper_id = ?').get(paperId);
+    async paperMetrics(_, { paperId }) {
+      const { rows } = await pool.query('SELECT * FROM metrics WHERE paper_id = $1', [paperId]);
+      if (!rows[0]) return null;
+      const ratingRes = await pool.query('SELECT AVG(rating) as avg FROM reviews WHERE paper_id = $1', [paperId]);
+      return mapMetrics(paperId, rows[0], ratingRes.rows[0]?.avg);
+    },
+    async analyticsSummary() {
+      const [stats, revStats, top] = await Promise.all([
+        pool.query('SELECT SUM(views_count) as tv, SUM(downloads_count) as td FROM metrics'),
+        pool.query('SELECT COUNT(*) as cnt, AVG(rating) as avg FROM reviews'),
+        pool.query('SELECT paper_id, views_count, downloads_count, altmetric_score FROM metrics ORDER BY views_count DESC LIMIT 5')
+      ]);
       return {
-        paperId,
-        ...row,
-        averageRating: ratingRes.avgRating ? parseFloat(ratingRes.avgRating.toFixed(2)) : null
+        totalViews: parseInt(stats.rows[0].tv) || 0,
+        totalDownloads: parseInt(stats.rows[0].td) || 0,
+        totalReviews: parseInt(revStats.rows[0].cnt) || 0,
+        averageSystemRating: revStats.rows[0].avg ? parseFloat(parseFloat(revStats.rows[0].avg).toFixed(2)) : 0,
+        topRatedPapers: top.rows.map(r => ({
+          paperId: r.paper_id,
+          viewsCount: r.views_count,
+          downloadsCount: r.downloads_count,
+          altmetricScore: r.altmetric_score
+        }))
       };
     },
-
-    analyticsSummary() {
-      const stats = db.prepare(`
-        SELECT 
-          SUM(views_count) as totalViews,
-          SUM(downloads_count) as totalDownloads
-        FROM metrics
-      `).get();
-
-      const revStats = db.prepare('SELECT COUNT(*) as totalRev, AVG(rating) as avgRate FROM reviews').get();
-
-      const topPapers = db.prepare(`
-        SELECT paper_id as paperId, views_count as viewsCount, downloads_count as downloadsCount, altmetric_score as altmetricScore
-        FROM metrics
-        ORDER BY views_count DESC
-        LIMIT 5
-      `).all();
-
-      return {
-        totalViews: stats.totalViews || 0,
-        totalDownloads: stats.totalDownloads || 0,
-        totalReviews: revStats.totalRev || 0,
-        averageSystemRating: revStats.avgRate ? parseFloat(revStats.avgRate.toFixed(2)) : 0,
-        topRatedPapers: topPapers
-      };
-    },
-
-    bookmarks() {
-      return db.prepare('SELECT id, paper_id as paperId, tag, created_at as createdAt FROM bookmarks ORDER BY created_at DESC').all();
+    async bookmarks() {
+      const { rows } = await pool.query('SELECT * FROM bookmarks ORDER BY created_at DESC');
+      return rows.map(r => ({
+        id: r.id,
+        paperId: r.paper_id,
+        tag: r.tag,
+        createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at
+      }));
     }
   },
 
   Mutation: {
-    addReview(_, { input }) {
-      const id = `rev-${Date.now()}`;
-      const now = new Date().toISOString();
-      db.prepare(`
-        INSERT INTO reviews (id, paper_id, reviewer_name, rating, comment, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(id, input.paperId, input.reviewerName, input.rating, input.comment || '', now);
-
+    async addReview(_, { input }) {
+      const id = `rev-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const now = new Date();
+      await pool.query(
+        'INSERT INTO reviews (id, paper_id, reviewer_name, rating, comment, created_at) VALUES ($1,$2,$3,$4,$5,$6)',
+        [id, input.paperId, input.reviewerName, input.rating, input.comment || '', now]
+      );
       return {
-        id,
-        paperId: input.paperId,
-        reviewerName: input.reviewerName,
-        rating: input.rating,
-        comment: input.comment,
-        createdAt: now
+        id, paperId: input.paperId, reviewerName: input.reviewerName,
+        rating: input.rating, comment: input.comment, createdAt: now.toISOString()
       };
     },
-
-    recordView(_, { paperId }) {
-      const row = db.prepare('SELECT * FROM metrics WHERE paper_id = ?').get(paperId);
-      if (row) {
-        db.prepare('UPDATE metrics SET views_count = views_count + 1 WHERE paper_id = ?').run(paperId);
+    async recordView(_, { paperId }) {
+      const { rows } = await pool.query('SELECT * FROM metrics WHERE paper_id = $1', [paperId]);
+      if (rows[0]) {
+        await pool.query('UPDATE metrics SET views_count = views_count + 1 WHERE paper_id = $1', [paperId]);
       } else {
-        db.prepare('INSERT INTO metrics (paper_id, views_count, downloads_count, altmetric_score, trending_rank) VALUES (?, 1, 0, 1.0, 999999)').run(paperId);
+        await pool.query(
+          'INSERT INTO metrics (paper_id, views_count, downloads_count, altmetric_score, trending_rank) VALUES ($1,1,0,1.0,999999)',
+          [paperId]
+        );
       }
-
-      const updated = db.prepare('SELECT views_count as viewsCount, downloads_count as downloadsCount, altmetric_score as altmetricScore, trending_rank as trendingRank FROM metrics WHERE paper_id = ?').get(paperId);
-      return {
-        paperId,
-        ...updated,
-        averageRating: 4.5
-      };
+      const { rows: updated } = await pool.query('SELECT * FROM metrics WHERE paper_id = $1', [paperId]);
+      return mapMetrics(paperId, updated[0], null);
     },
-
-    toggleBookmark(_, { paperId, tag = 'General' }) {
-      const existing = db.prepare('SELECT id FROM bookmarks WHERE paper_id = ?').get(paperId);
-      if (existing) {
-        db.prepare('DELETE FROM bookmarks WHERE id = ?').run(existing.id);
+    async toggleBookmark(_, { paperId, tag = 'General' }) {
+      const { rows } = await pool.query('SELECT id FROM bookmarks WHERE paper_id = $1', [paperId]);
+      if (rows[0]) {
+        await pool.query('DELETE FROM bookmarks WHERE id = $1', [rows[0].id]);
         return { success: true, message: `Removed bookmark for ${paperId}` };
       } else {
         const id = `bm-${Date.now()}`;
-        db.prepare('INSERT INTO bookmarks (id, paper_id, tag) VALUES (?, ?, ?)').run(id, paperId, tag);
+        await pool.query('INSERT INTO bookmarks (id, paper_id, tag) VALUES ($1,$2,$3)', [id, paperId, tag]);
         return { success: true, message: `Added bookmark for ${paperId}` };
       }
     }
   }
 };
 
-const server = new ApolloServer({
-  schema: buildSubgraphSchema([{ typeDefs, resolvers }]),
-  plugins: [{
-    async requestDidStart(requestContext) {
-      const start = process.hrtime();
-      const opName = requestContext.request.operationName || 'AnonymousOp';
-      return {
-        async willSendResponse() {
-          const delta = process.hrtime(start);
-          const duration = delta[0] + delta[1] / 1e9;
-          httpRequestDuration.labels(opName, '200').observe(duration);
-        }
-      };
-    }
-  }]
-});
+async function main() {
+  await initAnalyticsSchema();
 
-const PORT = 4002;
+  const server = new ApolloServer({
+    schema: buildSubgraphSchema([{ typeDefs, resolvers }]),
+    plugins: [{
+      async requestDidStart(requestContext) {
+        const start = process.hrtime();
+        const opName = requestContext.request.operationName || 'AnonymousOp';
+        return {
+          async willSendResponse() {
+            const delta = process.hrtime(start);
+            httpRequestDuration.labels(opName, '200').observe(delta[0] + delta[1] / 1e9);
+          }
+        };
+      }
+    }]
+  });
 
-startStandaloneServer(server, {
-  listen: { port: PORT }
-}).then(({ url }) => {
+  const { url } = await startStandaloneServer(server, { listen: { port: 4002 } });
   console.log(`[Analytics Subgraph] Ready at ${url}`);
-});
+}
+
+main().catch(err => { console.error('[Analytics] Fatal:', err); process.exit(1); });

@@ -1,19 +1,36 @@
 const express = require('express');
 const cors = require('cors');
+const axios = require('axios');
 const { ApolloServer, HeaderMap } = require('@apollo/server');
 const { ApolloGateway, IntrospectAndCompose } = require('@apollo/gateway');
 const { tracer, graphQLQueryCounter, graphQLQueryDuration } = require('./telemetry');
 
+async function waitForSubgraphs(urls, retries = 30, delay = 1000) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      await Promise.all(
+        urls.map(u => axios.post(u, { query: '{ __typename }' }, { timeout: 2000 }))
+      );
+      return;
+    } catch (_) {
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+}
+
 async function startGateway() {
   const app = express();
   const PORT = 4000;
+  const subgraphs = [
+    { name: 'catalog', url: 'http://localhost:4001' },
+    { name: 'analytics', url: 'http://localhost:4002' }
+  ];
+
+  await waitForSubgraphs(subgraphs.map(s => s.url));
 
   const gateway = new ApolloGateway({
     supergraphSdl: new IntrospectAndCompose({
-      subgraphs: [
-        { name: 'catalog', url: 'http://localhost:4001' },
-        { name: 'analytics', url: 'http://localhost:4002' }
-      ],
+      subgraphs,
       pollIntervalInMs: 15000
     })
   });

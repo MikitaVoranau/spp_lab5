@@ -6,7 +6,8 @@ import {
   ADD_REVIEW_MUTATION, 
   TOGGLE_BOOKMARK_MUTATION, 
   CREATE_PAPER_MUTATION,
-  DELETE_PAPER_MUTATION 
+  DELETE_PAPER_MUTATION,
+  SYNC_EXTERNAL_MUTATION
 } from './api';
 import { 
   Search, 
@@ -23,7 +24,8 @@ import {
   BookOpen, 
   X, 
   Quote,
-  Trash2
+  Trash2,
+  RefreshCw
 } from 'lucide-react';
 
 function getPaperFullSections(paper) {
@@ -53,6 +55,7 @@ export default function App() {
   const [totalPages, setTotalPages] = useState(1);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [notice, setNotice] = useState(null);
 
   const [search, setSearch] = useState('');
@@ -146,6 +149,23 @@ export default function App() {
     e.preventDefault();
     setPage(1);
     loadPapers();
+  };
+
+  const handleSyncFromApi = async () => {
+    setSyncing(true);
+    try {
+      const targetSource = selectedSource || 'ALL';
+      const res = await fetchGraphQL(SYNC_EXTERNAL_MUTATION, {
+        source: targetSource,
+        query: search.trim() || null
+      });
+      showNotice(res.syncExternalData.message);
+      await Promise.all([loadInitialData(), loadPapers()]);
+    } catch (err) {
+      showNotice('Ошибка синхронизации с внешними API');
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const handleToggleBookmark = async (paperId) => {
@@ -278,9 +298,14 @@ export default function App() {
           </h1>
         </div>
 
-        <button className="btn-primary" onClick={() => setIsCreateOpen(true)}>
-          <PlusCircle size={16} /> Опубликовать работу
-        </button>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <button className="btn-outline" onClick={handleSyncFromApi} disabled={syncing}>
+            <RefreshCw size={15} /> {syncing ? 'Синхронизация...' : `Загрузить из ${selectedSource || 'API'}`}
+          </button>
+          <button className="btn-primary" onClick={() => setIsCreateOpen(true)}>
+            <PlusCircle size={16} /> Опубликовать работу
+          </button>
+        </div>
       </header>
 
       {notice && (
@@ -318,9 +343,10 @@ export default function App() {
           <span style={{ fontSize: '13px', color: 'var(--text-muted)', fontWeight: 500 }}>Источник:</span>
           <select value={selectedSource} onChange={(e) => { setSelectedSource(e.target.value); setPage(1); }}>
             <option value="">Все источники</option>
-            <option value="arXiv">arXiv</option>
             <option value="OpenAlex">OpenAlex</option>
-            <option value="SemanticScholar">SemanticScholar</option>
+            <option value="CrossRef">CrossRef</option>
+            <option value="EuropePMC">EuropePMC</option>
+            <option value="arXiv">arXiv</option>
           </select>
 
           <span style={{ fontSize: '13px', color: 'var(--text-muted)', fontWeight: 500 }}>Категория:</span>
@@ -565,7 +591,10 @@ export default function App() {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                   {readerPaper.authors?.map((a, i) => (
                     <div key={i} className="author-chip" style={{ background: '#ffffff', padding: '6px 12px', fontSize: '12.5px' }}>
-                      <strong style={{ color: 'var(--text-main)' }}>{a.author.name}</strong> • {a.author.affiliation} ({a.author.country}) <span style={{ color: '#0284c7', marginLeft: '4px' }}>[h-index: {a.author.hIndex}]</span>
+                      <strong style={{ color: 'var(--text-main)' }}>{a.author.name}</strong>
+                      {a.author.affiliation && <> • {a.author.affiliation}</>}
+                      {a.author.country && <> ({a.author.country})</>}
+                      {a.author.hIndex > 0 && <span style={{ color: '#0284c7', marginLeft: '4px' }}>[h-index: {a.author.hIndex}]</span>}
                     </div>
                   ))}
                 </div>
@@ -620,7 +649,18 @@ export default function App() {
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-color)', paddingTop: '20px', marginTop: '10px' }}>
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {readerPaper.url && (
+                    <a
+                      href={readerPaper.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-outline"
+                      style={{ textDecoration: 'none' }}
+                    >
+                      <BookOpen size={14} /> Открыть оригинал
+                    </a>
+                  )}
                   <button className="btn-outline" onClick={() => handleCopyCitation(readerPaper)}>
                     <Quote size={14} /> Скопировать цитату (APA)
                   </button>
@@ -677,9 +717,10 @@ export default function App() {
                 <div className="field-group">
                   <label>Источник:</label>
                   <select value={newSource} onChange={e => setNewSource(e.target.value)}>
-                    <option value="arXiv">arXiv</option>
                     <option value="OpenAlex">OpenAlex</option>
-                    <option value="SemanticScholar">SemanticScholar</option>
+                    <option value="CrossRef">CrossRef</option>
+                    <option value="EuropePMC">EuropePMC</option>
+                    <option value="arXiv">arXiv</option>
                   </select>
                 </div>
 

@@ -1,10 +1,11 @@
 {
   "name": "spp_lab5",
   "version": "1.0.0",
-  "description": "GraphQL Federation Scientific Portal with 10k+ records and Monitoring",
+  "description": "GraphQL Federation Scientific Portal with Real Data and PostgreSQL",
   "main": "gateway/index.js",
   "scripts": {
     "seed": "node scripts/ingest.js",
+    "seed:force": "node scripts/ingest.js --force",
     "catalog": "node subgraph-catalog/index.js",
     "analytics": "node subgraph-analytics/index.js",
     "gateway": "node gateway/index.js",
@@ -25,13 +26,14 @@
     "@opentelemetry/sdk-node": "^0.301.2",
     "@opentelemetry/sdk-trace-node": "^2.12.1",
     "axios": "^1.13.6",
-    "better-sqlite3": "^12.6.2",
     "concurrently": "^9.2.1",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^4.22.1",
     "graphql": "^16.15.0",
     "graphql-tag": "^2.12.6",
-    "prom-client": "^15.1.3"
+    "pg": "^8.13.3",
+    "prom-client": "^15.1.3",
+    "xml2js": "^0.6.2"
   }
 }

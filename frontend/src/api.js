@@ -153,8 +153,8 @@ export const DELETE_PAPER_MUTATION = `
 `;
 
 export const SYNC_EXTERNAL_MUTATION = `
-  mutation SyncExternal($source: String!) {
-    syncExternalData(source: $source) {
+  mutation SyncExternal($source: String!, $query: String) {
+    syncExternalData(source: $source, query: $query) {
       success
       message
     }
